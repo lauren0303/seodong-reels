@@ -153,10 +153,43 @@ def classify(item, kw):
     return tags
 
 
+SHORTCODE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def post_order(reel):
+    """게시 순서. 릴스 주소의 코드(shortcode)는 올린 시각 순으로 커지므로 같은 날 안에서도 순서를 알 수 있다."""
+    code = reel["permalink"].rstrip("/").split("/")[-1][:11]
+    n = 0
+    for ch in code:
+        n = n * 64 + SHORTCODE.index(ch) if ch in SHORTCODE else n
+    return (reel["date"], n)
+
+
+def dedupe_key(caption):
+    first = next((l for l in caption.splitlines() if l.strip()), "")
+    first = re.sub(r"\((공구 마감|\+?\+?추가[^)]*|공유[^)]*)\)", "", first)
+    return re.sub(r"[^가-힣a-zA-Z0-9]", "", first)[:25]
+
+
+def drop_pilots(reels, days=3):
+    """같은 첫 줄로 3일 안에 여러 번 올린 릴스(파일럿)는 가장 나중 것만 남긴다.
+    overrides에 "keep": true가 있으면 묶음과 상관없이 남긴다."""
+    groups = {}
+    for r in reels:
+        groups.setdefault(dedupe_key(r["caption"]), []).append(r)
+    drop = set()
+    for g in groups.values():
+        g.sort(key=post_order)
+        for a, b in zip(g, g[1:]):
+            if (date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days <= days and not a.get("keep"):
+                drop.add(a["id"])  # 3일 안에 같은 글이 또 올라왔으면 앞의 것은 파일럿
+    return [r for r in reels if r["id"] not in drop], len(drop)
+
+
 def apply_override(reel, ov):
     if not ov:
         return reel
-    for k in ("title", "date", "hide"):
+    for k in ("title", "date", "hide", "keep"):
         if k in ov:
             reel[k] = ov[k]
     for k, v in ov.get("tags", {}).items():
@@ -218,6 +251,10 @@ def main():
         reel = apply_override(reel, overrides.get(item["id"]))
         if not reel.pop("hide", False):
             reels.append(reel)
+    reels, pilots = drop_pilots(reels)
+    for r in reels:
+        r.pop("keep", None)
+    print(f"파일럿(중복) 릴스 {pilots}개 숨김")
 
     # 원본 보관(썸네일 URL은 만료되므로 저장하지 않음)
     raw_out = [{k: v for k, v in r.items() if k != "thumbnail_url"}

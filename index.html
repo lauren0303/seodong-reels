@@ -228,6 +228,8 @@ const REGION_LIMIT = 12;
 
 const $ = s => document.querySelector(s);
 const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
+// 검색 대상 글은 띄어쓰기를 살려 둔다 (붙이면 "증가 평소"가 "가평"으로 잡힘)
+const flat = s => (s || "").toLowerCase().replace(/\s+/g, " ");
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 let reels = [], alias = {};
@@ -410,7 +412,7 @@ document.querySelectorAll(".menu details").forEach(d => d.addEventListener("togg
     ]);
     alias = buildAlias(kw);
     reels = rs.sort((a, b) => b.date.localeCompare(a.date)).map(r => ({
-      ...r, _tags: new Set(tagList(r)), _hay: norm([r.title, r.caption, ...tagList(r)].join(" ")),
+      ...r, _tags: new Set(tagList(r)), _hay: flat([r.title, r.caption, ...tagList(r)].join("\n")),
     }));
     if (reels.length) $("#foot").textContent = `릴스 ${reels.length}개 · 가장 최근 ${reels[0].date.replaceAll("-", ".")} · 매일 오전 7시에 새로 반영됩니다.`;
     wireMenu();

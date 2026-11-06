@@ -57,7 +57,7 @@ jobs:
         id: update
         env:
           IG_ACCESS_TOKEN: ${{ env.IG_ACCESS_TOKEN || secrets.IG_ACCESS_TOKEN }}
-          WINDSOR_API_KEY: ${{ secrets.WINDSOR_API_KEY }}
+          WINDSOR_API_KEY: ${{ secrets.WINDSOR_API_KEY || vars.WINDSOR_API_KEY }}
         run: python scripts/update.py --source "$DATA_SOURCE" ${{ inputs.full && '--full' || '' }} --csv review.csv
 
       - name: 바뀐 내용 커밋 (새 릴스가 없으면 건너뜀)

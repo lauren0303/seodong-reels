@@ -26,10 +26,14 @@ def load(path, default):
     return json.loads(path.read_text("utf-8")) if path.exists() else default
 
 
-def get_json(url):
+def get_json(url, timeout=60):
     req = urllib.request.Request(url, headers={"User-Agent": "seodong-reels-updater"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        # 오류 본문만 보여 준다 (주소에 키가 들어 있으므로 URL은 찍지 않음)
+        sys.exit(f"요청 실패 HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}")
 
 
 # ---------- 수집 ----------
@@ -63,10 +67,18 @@ def fetch_windsor(since):
     if not key:
         sys.exit("WINDSOR_API_KEY 환경변수가 없습니다.")
     fields = "date,media_id,media_caption,media_permalink,media_product_type,media_thumbnail_url"
-    url = "https://connectors.windsor.ai/instagram?" + urllib.parse.urlencode({
-        "api_key": key, "fields": fields, "date_from": since, "date_to": date.today().isoformat(),
-        "select_accounts": IG_USER_ID})
-    rows = get_json(url).get("data", [])
+    rows, start, today = [], date.fromisoformat(since), date.today()
+    # 기간이 길면 응답이 커서 느리므로 한 달씩 나눠 받는다
+    while start <= today:
+        nxt = (start.replace(day=1) + timedelta(days=32)).replace(day=1)
+        end = min(nxt - timedelta(days=1), today)
+        url = "https://connectors.windsor.ai/instagram?" + urllib.parse.urlencode({
+            "api_key": key, "fields": fields, "date_from": start.isoformat(),
+            "date_to": end.isoformat(), "select_accounts": IG_USER_ID})
+        part = get_json(url, timeout=300).get("data", [])
+        print(f"  {start}~{end}: {len(part)}행", flush=True)
+        rows += part
+        start = nxt
     return [{"id": r["media_id"], "date": r["date"][:10], "permalink": r["media_permalink"],
              "caption": r.get("media_caption") or "", "thumbnail_url": r.get("media_thumbnail_url")}
             for r in rows if r.get("media_product_type") == "REELS" and r["date"][:10] >= START]
@@ -115,8 +127,14 @@ def classify(item, kw):
     goods = match(text, kw["goods"])
     gb = kw["groupbuy"]
     t = norm(text)
-    is_gb = any(w in t for w in gb["strong"]) or (
-        any(w in t for w in gb["weak"]) and any(w in t for w in gb["weak_needs_any"]))
+    title = norm(title_of(item["caption"]))
+    mentions = any(w in t for w in gb["strong"])
+    # 공구 글: 제목에 공구가 있거나, 공구가·일정 같은 공구 안내가 있거나,
+    # 공구 언급만 있고 장소 내용은 없을 때. (여행 릴스 끝의 "공구 예정" 홍보는 장소로 둔다)
+    # 오픈/마감은 "오픈런", "신청 마감"처럼 공구와 무관하게 자주 쓰여 단독으로는 보지 않는다.
+    is_gb = (any(w in title for w in gb["strong"])
+             or any(norm(w) in t for w in gb["details"])
+             or (mentions and not types))
     if is_gb:
         category = "공구"
     elif types:

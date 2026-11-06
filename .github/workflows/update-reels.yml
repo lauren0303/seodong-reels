@@ -1,0 +1,84 @@
+name: 릴스 업데이트
+
+on:
+  schedule:
+    - cron: "0 22 * * *"   # UTC 22시 = 한국 시간 오전 7시
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "2024-10-01부터 전부 다시 받기"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # 커밋·푸시
+  issues: write     # 실패 알림 이슈
+
+concurrency:
+  group: update-reels
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # 저장소 Settings → Secrets and variables → Actions → Variables 에서 DATA_SOURCE를
+      # windsor 로 바꾸면 Windsor.ai로 받는다 (기본: graph)
+      DATA_SOURCE: ${{ vars.DATA_SOURCE || 'graph' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 월요일마다 60일 토큰을 새로 받아 Secret에 덮어쓴다 (graph 방식일 때만)
+      - name: 토큰 갱신
+        if: env.DATA_SOURCE == 'graph'
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ "$(date -u +%u)" != "7" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "갱신은 일요일 UTC(=월요일 오전 7시 KST)에만 합니다."; exit 0
+          fi
+          if [ -z "$FB_APP_ID" ] || [ -z "$GH_TOKEN" ]; then
+            echo "::warning::FB_APP_ID/FB_APP_SECRET/GH_PAT 가 없어 토큰 자동 갱신을 건너뜁니다."; exit 0
+          fi
+          NEW=$(python scripts/refresh_token.py)
+          echo "::add-mask::$NEW"
+          echo "$NEW" | gh secret set IG_ACCESS_TOKEN --repo "${{ github.repository }}"
+          echo "IG_ACCESS_TOKEN=$NEW" >> "$GITHUB_ENV"
+
+      - name: 수집·분류·썸네일
+        id: update
+        env:
+          IG_ACCESS_TOKEN: ${{ env.IG_ACCESS_TOKEN || secrets.IG_ACCESS_TOKEN }}
+          WINDSOR_API_KEY: ${{ secrets.WINDSOR_API_KEY }}
+        run: python scripts/update.py --source "$DATA_SOURCE" ${{ inputs.full && '--full' || '' }} --csv review.csv
+
+      - name: 바뀐 내용 커밋 (새 릴스가 없으면 건너뜀)
+        run: |
+          git add -A data review.csv
+          if [ -d images ]; then git add -A images; fi
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 커밋하지 않습니다."; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "릴스 업데이트 $(TZ=Asia/Seoul date +%Y-%m-%d)"
+          git push
+          # GitHub Pages(브랜치 배포)는 푸시되면 자동으로 다시 배포됩니다.
+
+      - name: 실패 알림
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "릴스 업데이트 실패 $(TZ=Asia/Seoul date +%Y-%m-%d)" \
+            --body "자동 업데이트가 실패했습니다. 토큰 만료나 API 오류일 수 있어요.
+          로그: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

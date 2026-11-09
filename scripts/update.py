@@ -12,7 +12,7 @@
 reels.json이 바뀌었으면 GITHUB_OUTPUT에 changed=true를 남긴다.
 """
 import argparse, csv, json, os, re, sys, urllib.parse, urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,11 +40,21 @@ def get_json(url, timeout=60):
 
 
 # ---------- 수집 ----------
+def kind_of(product_type, media_type):
+    """사이트에 싣는 게시물 종류. 릴스와 캐러셀(여러 장 게시물)만 싣고 나머지는 None.
+    캐러셀은 썸네일 주소가 없어서 첫 장 사진(media_url)을 썸네일로 쓴다."""
+    if product_type == "REELS":
+        return "reel"
+    if media_type == "CAROUSEL_ALBUM":
+        return "carousel"
+    return None
+
+
 def fetch_graph(since):
     token = os.environ.get("IG_ACCESS_TOKEN")
     if not token:
         sys.exit("IG_ACCESS_TOKEN 환경변수가 없습니다.")
-    fields = "id,caption,media_type,media_product_type,permalink,timestamp,thumbnail_url"
+    fields = "id,caption,media_type,media_product_type,permalink,timestamp,thumbnail_url,media_url"
     base = f"{IG_GRAPH}/me" if token.startswith("IG") else f"{GRAPH}/{IG_USER_ID}"
     url = f"{base}/media?" + urllib.parse.urlencode(
         {"fields": fields, "limit": 100, "access_token": token})
@@ -59,9 +69,11 @@ def fetch_graph(since):
             if d < since:
                 stop = True  # 최신순이므로 여기부터는 이미 받은 기간
                 break
-            if m.get("media_product_type") == "REELS" and d >= START:
-                out.append({"id": m["id"], "date": d, "permalink": m["permalink"],
-                            "caption": m.get("caption", ""), "thumbnail_url": m.get("thumbnail_url")})
+            kind = kind_of(m.get("media_product_type"), m.get("media_type"))
+            if kind and d >= START:
+                out.append({"id": m["id"], "date": d, "permalink": m["permalink"], "kind": kind,
+                            "caption": m.get("caption", ""),
+                            "thumbnail_url": m.get("thumbnail_url") or m.get("media_url")})
         url = None if stop else page.get("paging", {}).get("next")
     return out
 
@@ -70,7 +82,8 @@ def fetch_windsor(since):
     key = os.environ.get("WINDSOR_API_KEY")
     if not key:
         sys.exit("WINDSOR_API_KEY 환경변수가 없습니다.")
-    fields = "date,media_id,media_caption,media_permalink,media_product_type,media_thumbnail_url"
+    fields = ("date,media_id,media_caption,media_permalink,media_product_type,media_type,"
+              "media_thumbnail_url,media_url")
     rows, start, today = [], date.fromisoformat(since), date.today()
     # 기간이 길면 응답이 커서 느리므로 한 달씩 나눠 받는다
     while start <= today:
@@ -84,8 +97,11 @@ def fetch_windsor(since):
         rows += part
         start = nxt
     return [{"id": r["media_id"], "date": r["date"][:10], "permalink": r["media_permalink"],
-             "caption": r.get("media_caption") or "", "thumbnail_url": r.get("media_thumbnail_url")}
-            for r in rows if r.get("media_product_type") == "REELS" and r["date"][:10] >= START]
+             "kind": kind_of(r.get("media_product_type"), r.get("media_type")),
+             "caption": r.get("media_caption") or "",
+             "thumbnail_url": r.get("media_thumbnail_url") or r.get("media_url")}
+            for r in rows if kind_of(r.get("media_product_type"), r.get("media_type"))
+            and r["date"][:10] >= START]
 
 
 # ---------- 분류 ----------
@@ -233,7 +249,8 @@ def drop_pilots(reels, days=3):
     overrides에 "keep": true가 있으면 묶음과 상관없이 남긴다."""
     groups = {}
     for r in reels:
-        groups.setdefault(dedupe_key(r["caption"]), []).append(r)
+        # 같은 글을 릴스와 캐러셀로 따로 올린 건 파일럿이 아니므로 종류별로 묶는다
+        groups.setdefault((r.get("kind", "reel"), dedupe_key(r["caption"])), []).append(r)
     drop = set()
     for g in groups.values():
         g.sort(key=post_order)
@@ -328,64 +345,6 @@ def save_thumb(item, refresh=False):
     return rel
 
 
-# ---------- 공구 상태 ----------
-PERIOD = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s*\([^)]*\))?\s*[~\-–]\s*"
-                    r"(?:(\d{1,2})\s*월\s*)?(\d{1,2})\s*일")
-CLOSED = re.compile(r"조기\s*마감|마감되었|품절")
-
-
-def parse_period(caption, posted):
-    """'10월 13일(화) ~ 16일(금)' → (date(…13), date(…16)). 없으면 None."""
-    m = PERIOD.search(caption)
-    if not m:
-        return None
-    m1, d1, m2, d2 = int(m[1]), int(m[2]), int(m[3] or m[1]), int(m[4])
-    y = posted.year + (1 if m1 < posted.month - 6 else 0)  # 12월에 올린 1월 공구
-    try:
-        start = date(y, m1, d1)
-        end = date(y + (1 if m2 < m1 else 0), m2, d2)
-    except ValueError:
-        return None
-    return start, end
-
-
-def groupbuy_status(reels, today):
-    """캡션의 공구 기간으로 '지금' 칸 상태를 정한다: active / upcoming / recent / none."""
-    gb = [r for r in reels if r["tags"].get("category") == "공구" and r["date"] <= today.isoformat()]
-    periods = {}
-    for r in gb:
-        posted = date.fromisoformat(r["date"])
-        if (today - posted).days > 90:
-            continue
-        pr = parse_period(r["caption"], posted)
-        if not pr:
-            continue
-        g = periods.setdefault(pr, {"reels": [], "closed": False})
-        g["reels"].append(r)
-        if CLOSED.search(r["caption"]):
-            g["closed"] = True
-    best = None
-    for (start, end), g in periods.items():
-        if g["closed"] or end < today:
-            continue
-        status = "active" if start <= today else "upcoming"
-        cand = (0 if status == "active" else 1, start, status, end, g["reels"])
-        if best is None or cand[:2] < best[:2]:
-            best = cand
-    if best:
-        _, start, status, end, rs = best
-        r = max(rs, key=lambda x: x["date"])  # 가장 최근에 올린 안내 릴스
-        return {"status": status, "start": start.isoformat(), "end": end.isoformat(),
-                "title": r["title"], "permalink": r["permalink"]}
-    recent = [r for r in gb if (today - date.fromisoformat(r["date"])).days <= 14
-              and not parse_period(r["caption"], date.fromisoformat(r["date"]))
-              and not CLOSED.search(r["caption"])]
-    if recent:
-        r = max(recent, key=lambda x: x["date"])
-        return {"status": "recent", "title": r["title"], "permalink": r["permalink"], "date": r["date"]}
-    return {"status": "none"}
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["graph", "windsor", "none"], default="graph")
@@ -403,6 +362,8 @@ def main():
         last = max((r["date"] for r in raw.values()), default=START)
         # 하루 겹쳐서 받아 시간대 경계 누락을 막는다
         since = START if args.full else max(START, (date.fromisoformat(last) - timedelta(days=1)).isoformat())
+        if not any(r.get("kind") == "carousel" for r in raw.values()):
+            since = START  # 캐러셀을 처음 싣는 날: 예전 캐러셀까지 한 번에 채운다
         if args.refresh_thumbs and not args.full:  # 썸네일 확인은 최근 3개월 릴스만
             since = min(since, max(START, (date.today() - timedelta(days=REFRESH_DAYS)).isoformat()))
         new = fetch_graph(since) if args.source == "graph" else fetch_windsor(since)
@@ -413,13 +374,15 @@ def main():
         added = sum(1 for n in new if n["id"] not in raw)
         for n in new:
             raw[n["id"]] = {**raw.get(n["id"], {}), **n}
-        print(f"{since} 이후 릴스 {len(new)}개 조회, 새 릴스 {added}개")
+        n_car = sum(1 for n in new if n.get("kind") == "carousel")
+        print(f"{since} 이후 게시물 {len(new)}개 조회(캐러셀 {n_car}개), 새 게시물 {added}개")
 
     reels = []
     for item in sorted(raw.values(), key=lambda r: (r["date"], r["id"]), reverse=True):
         if item["date"] < START:
             continue
         reel = {"id": item["id"], "permalink": item["permalink"], "date": item["date"],
+                "kind": item.get("kind", "reel"),
                 "title": title_of(item["caption"]), "caption": item["caption"],
                 "thumb": save_thumb(item, refresh=args.refresh_thumbs), "tags": classify(item, kw)}
         reel = apply_override(reel, overrides.get(item["id"]))
@@ -442,10 +405,6 @@ def main():
     if changed:
         out.write_text(new_text, "utf-8")
     print(f"reels.json: {len(reels)}개, {'변경됨' if changed else '변경 없음'}")
-    today_kst = (datetime.now(timezone.utc) + timedelta(hours=9)).date()
-    gb = groupbuy_status(reels, today_kst)
-    (DATA / "groupbuy.json").write_text(json.dumps(gb, ensure_ascii=False, indent=1) + "\n", "utf-8")
-    print(f"공구 상태: {gb['status']}")
     if gh := os.environ.get("GITHUB_OUTPUT"):
         with open(gh, "a") as f:
             f.write(f"changed={'true' if changed else 'false'}\n")
@@ -453,10 +412,10 @@ def main():
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8-sig") as f:  # 엑셀에서 한글 깨짐 방지
             w = csv.writer(f)
-            w.writerow(["날짜", "캡션 첫 줄", "구분", "지역", "장소 유형", "제품 종류", "검색 키워드", "광고표시", "링크", "id"])
+            w.writerow(["날짜", "종류", "캡션 첫 줄", "구분", "지역", "장소 유형", "제품 종류", "검색 키워드", "광고표시", "링크", "id"])
             for r in reels:
                 t = r["tags"]
-                w.writerow([r["date"], r["title"], t["category"], ", ".join(t.get("region", [])),
+                w.writerow([r["date"], "캐러셀" if r["kind"] == "carousel" else "릴스", r["title"], t["category"], ", ".join(t.get("region", [])),
                             ", ".join(t.get("type", [])), ", ".join(t.get("goods", [])),
                             ", ".join(t.get("keywords", [])), t.get("ad", ""), r["permalink"], r["id"]])
         print(f"분류표: {args.csv}")

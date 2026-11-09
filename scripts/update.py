@@ -11,7 +11,7 @@
 reels.json이 바뀌었으면 GITHUB_OUTPUT에 changed=true를 남긴다.
 """
 import argparse, csv, json, os, re, sys, urllib.parse, urllib.request
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -285,6 +285,64 @@ def save_thumb(item):
         return None
 
 
+# ---------- 공구 상태 ----------
+PERIOD = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s*\([^)]*\))?\s*[~\-–]\s*"
+                    r"(?:(\d{1,2})\s*월\s*)?(\d{1,2})\s*일")
+CLOSED = re.compile(r"조기\s*마감|마감되었|품절")
+
+
+def parse_period(caption, posted):
+    """'10월 13일(화) ~ 16일(금)' → (date(…13), date(…16)). 없으면 None."""
+    m = PERIOD.search(caption)
+    if not m:
+        return None
+    m1, d1, m2, d2 = int(m[1]), int(m[2]), int(m[3] or m[1]), int(m[4])
+    y = posted.year + (1 if m1 < posted.month - 6 else 0)  # 12월에 올린 1월 공구
+    try:
+        start = date(y, m1, d1)
+        end = date(y + (1 if m2 < m1 else 0), m2, d2)
+    except ValueError:
+        return None
+    return start, end
+
+
+def groupbuy_status(reels, today):
+    """캡션의 공구 기간으로 '지금' 칸 상태를 정한다: active / upcoming / recent / none."""
+    gb = [r for r in reels if r["tags"].get("category") == "공구" and r["date"] <= today.isoformat()]
+    periods = {}
+    for r in gb:
+        posted = date.fromisoformat(r["date"])
+        if (today - posted).days > 90:
+            continue
+        pr = parse_period(r["caption"], posted)
+        if not pr:
+            continue
+        g = periods.setdefault(pr, {"reels": [], "closed": False})
+        g["reels"].append(r)
+        if CLOSED.search(r["caption"]):
+            g["closed"] = True
+    best = None
+    for (start, end), g in periods.items():
+        if g["closed"] or end < today:
+            continue
+        status = "active" if start <= today else "upcoming"
+        cand = (0 if status == "active" else 1, start, status, end, g["reels"])
+        if best is None or cand[:2] < best[:2]:
+            best = cand
+    if best:
+        _, start, status, end, rs = best
+        r = max(rs, key=lambda x: x["date"])  # 가장 최근에 올린 안내 릴스
+        return {"status": status, "start": start.isoformat(), "end": end.isoformat(),
+                "title": r["title"], "permalink": r["permalink"]}
+    recent = [r for r in gb if (today - date.fromisoformat(r["date"])).days <= 14
+              and not parse_period(r["caption"], date.fromisoformat(r["date"]))
+              and not CLOSED.search(r["caption"])]
+    if recent:
+        r = max(recent, key=lambda x: x["date"])
+        return {"status": "recent", "title": r["title"], "permalink": r["permalink"], "date": r["date"]}
+    return {"status": "none"}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["graph", "windsor", "none"], default="graph")
@@ -337,6 +395,10 @@ def main():
     if changed:
         out.write_text(new_text, "utf-8")
     print(f"reels.json: {len(reels)}개, {'변경됨' if changed else '변경 없음'}")
+    today_kst = (datetime.now(timezone.utc) + timedelta(hours=9)).date()
+    gb = groupbuy_status(reels, today_kst)
+    (DATA / "groupbuy.json").write_text(json.dumps(gb, ensure_ascii=False, indent=1) + "\n", "utf-8")
+    print(f"공구 상태: {gb['status']}")
     if gh := os.environ.get("GITHUB_OUTPUT"):
         with open(gh, "a") as f:
             f.write(f"changed={'true' if changed else 'false'}\n")

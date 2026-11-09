@@ -110,7 +110,8 @@ details[open] .chev{transform:rotate(90deg);border-color:var(--accent-ink)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;padding:0;list-style:none}
 .chips li{font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid currentColor}
 .slot{font-size:13px;font-weight:600;opacity:.8}
-.jump{border:0;background:var(--accent-ink);color:var(--accent);font-weight:600;font-size:14px;padding:8px 14px;border-radius:999px;cursor:pointer}
+.jump{border:0;background:var(--accent-ink);color:var(--accent);font-weight:600;font-size:14px;padding:8px 14px;border-radius:999px;cursor:pointer;display:inline-block;text-decoration:none}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
 .links{background:var(--panel);color:var(--panel-ink);border-radius:18px;padding:28px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .links .eyebrow{color:var(--accent)}
 .links h2{margin-bottom:8px}
@@ -221,13 +222,19 @@ a.link:hover small{color:var(--accent-ink)}
 
       <div class="group">
         <h3>공동구매</h3>
-        <details data-cat="공구">
-          <summary><span class="tag">진행</span><span class="name">진행 중인 공구</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
-          <div class="body"><ul class="chips"><li>기간</li><li>구성·가격</li><li>배송</li><li>구매 링크</li></ul><p class="slot">현재 등록된 공구 없음</p></div>
+        <details id="gb-now">
+          <summary><span class="tag">지금</span><span class="name">진행 중인 공구</span><span class="count" id="gb-state">없음</span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><p id="gb-text">지금은 진행 중인 공구가 없어요.<br>오픈 소식은 인스타 알림으로 가장 먼저 알려 드려요!</p>
+            <div class="acts" id="gb-acts"><a class="jump" href="https://inpk.link/seodong_love" target="_blank" rel="noopener">공구·애견용품 링크 ↗</a><a class="jump" href="https://www.instagram.com/seodong_love/" target="_blank" rel="noopener">인스타 알림 받기 ↗</a></div></div>
+        </details>
+        <details data-cat="공구" data-label="지난 공구">
+          <summary><span class="tag">지난</span><span class="name">지난 공구 모아보기</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><p>"그 제품 공구 언제 했더라?" 싶을 때 찾아보세요.</p><p class="slot">목록 준비 중</p></div>
         </details>
         <details>
-          <summary><span class="tag">안내</span><span class="name">공구 일정·교환·문의 안내</span><span class="chev" aria-hidden="true">→</span></summary>
-          <div class="body"><p class="slot">내용 준비 중</p></div>
+          <summary><span class="tag">문의</span><span class="name">공구 문의</span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><p>공구 관련 문의는 인스타 DM이나 메일로 보내 주세요.</p>
+            <div class="acts"><a class="jump" href="https://ig.me/m/seodong_love" target="_blank" rel="noopener">인스타 DM ↗</a><a class="jump" href="mailto:lauren0303@naver.com">메일 보내기 ✉</a></div></div>
         </details>
       </div>
     </section>
@@ -428,7 +435,7 @@ function wireMenu() {
     d.querySelector(".count").textContent = n ? `${n}개` : "";
     const slot = d.querySelector(".slot");
     if (!n) return;
-    const btn = Object.assign(document.createElement("button"), { type: "button", className: "jump", textContent: `릴스 ${n}개 보기 ↓` });
+    const btn = Object.assign(document.createElement("button"), { type: "button", className: "jump", textContent: `${d.dataset.label || "릴스"} ${n}개 보기 ↓` });
     btn.addEventListener("click", () => {
       $("#q").value = "";
       update(type ? { q: "", cat: "장소", region: "", type } : { q: "", cat, region: "", type: "" });
@@ -442,8 +449,27 @@ document.querySelectorAll(".menu details").forEach(d => d.addEventListener("togg
   if (d.open) document.querySelectorAll(".menu details").forEach(o => { if (o !== d) o.open = false; });
 }));
 
+// 공구 '지금' 칸: 매일 업데이트가 캡션의 공구 기간을 읽어 data/groupbuy.json에 남긴다
+function showGroupbuy(g) {
+  if (!g || !g.status || g.status === "none") return;
+  const md = d => { const [, m, day] = d.split("-"); return `${+m}/${+day}`; };
+  const reel = `<a class="jump" href="${esc(g.permalink)}" target="_blank" rel="noopener">공구 릴스 보기 ↗</a>`;
+  const shop = `<a class="jump" href="https://inpk.link/seodong_love" target="_blank" rel="noopener">구매 링크(인포크) ↗</a>`;
+  const label = { active: "진행 중", upcoming: "오픈 예정", recent: "새 소식" }[g.status];
+  const text = {
+    active: `<strong>${esc(g.title)}</strong><br>${md(g.start)} ~ ${md(g.end)}까지 진행해요!`,
+    upcoming: `<strong>${esc(g.title)}</strong><br>${md(g.start)}에 오픈해요! (~${md(g.end)})`,
+    recent: `<strong>${esc(g.title)}</strong><br>기간과 구매 방법은 릴스 캡션에서 확인해 주세요.`,
+  }[g.status];
+  $("#gb-state").textContent = label;
+  $("#gb-text").innerHTML = text;
+  $("#gb-acts").innerHTML = reel + shop;
+  $("#gb-now").open = true;
+}
+
 (async () => {
   readURL();
+  fetch("data/groupbuy.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : null).then(showGroupbuy).catch(() => {});
   $("#q").value = state.q;
   try {
     const [rs, kw] = await Promise.all([

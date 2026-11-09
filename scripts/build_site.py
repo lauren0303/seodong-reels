@@ -20,8 +20,9 @@ def main(out):
     (out / "data").mkdir(parents=True)
     (out / "images").mkdir()
     shutil.copy(ROOT / "index.html", out / "index.html")
-    for name in ("reels.json", "keywords.json"):
-        shutil.copy(ROOT / "data" / name, out / "data" / name)
+    for name in ("reels.json", "keywords.json", "groupbuy.json"):
+        if (ROOT / "data" / name).exists():
+            shutil.copy(ROOT / "data" / name, out / "data" / name)
     (out / ".nojekyll").write_text("")
 
     try:

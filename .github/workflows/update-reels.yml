@@ -9,6 +9,10 @@ on:
         description: "2024-10-01부터 전부 다시 받기"
         type: boolean
         default: false
+      thumbs:
+        description: "썸네일(커버) 바뀐 것 지금 확인하기"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # 커밋·푸시
@@ -32,6 +36,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # 썸네일이 실제로 바뀌었는지 그림으로 비교할 때 쓴다
+      - run: pip install --quiet pillow
 
       # 월요일마다 60일 토큰을 새로 받아 Secret에 덮어쓴다 (graph 방식일 때만)
       - name: 토큰 갱신
@@ -58,7 +65,13 @@ jobs:
         env:
           IG_ACCESS_TOKEN: ${{ env.IG_ACCESS_TOKEN || secrets.IG_ACCESS_TOKEN }}
           WINDSOR_API_KEY: ${{ secrets.WINDSOR_API_KEY || vars.WINDSOR_API_KEY }}
-        run: python scripts/update.py --source "$DATA_SOURCE" ${{ inputs.full && '--full' || '' }} --csv review.csv
+        run: |
+          EXTRA=""
+          # 매주 월요일 오전 7시(KST)에는 최근 3개월 릴스의 썸네일을 다시 확인한다
+          if [ "$(date -u +%u)" = "7" ] || [ "${{ inputs.thumbs }}" = "true" ]; then
+            EXTRA="--refresh-thumbs"
+          fi
+          python scripts/update.py --source "$DATA_SOURCE" ${{ inputs.full && '--full' || '' }} $EXTRA --csv review.csv
 
       - name: 바뀐 내용 커밋 (새 릴스가 없으면 건너뜀)
         run: |

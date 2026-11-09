@@ -19,7 +19,8 @@ DATA = ROOT / "data"
 IMAGES = ROOT / "images"
 START = "2024-10-01"
 IG_USER_ID = os.environ.get("IG_USER_ID", "17841453924057893")
-GRAPH = "https://graph.facebook.com/v21.0"
+GRAPH = "https://graph.facebook.com/v21.0"      # 페이스북 로그인 토큰(EAA…)
+IG_GRAPH = "https://graph.instagram.com/v21.0"  # 인스타 로그인 토큰(IG…) — 페이스북 페이지 없이 무료
 
 
 def load(path, default):
@@ -42,7 +43,8 @@ def fetch_graph(since):
     if not token:
         sys.exit("IG_ACCESS_TOKEN 환경변수가 없습니다.")
     fields = "id,caption,media_type,media_product_type,permalink,timestamp,thumbnail_url"
-    url = f"{GRAPH}/{IG_USER_ID}/media?" + urllib.parse.urlencode(
+    base = f"{IG_GRAPH}/me" if token.startswith("IG") else f"{GRAPH}/{IG_USER_ID}"
+    url = f"{base}/media?" + urllib.parse.urlencode(
         {"fields": fields, "limit": 100, "access_token": token})
     out = []
     while url:
@@ -55,7 +57,7 @@ def fetch_graph(since):
             if d < since:
                 stop = True  # 최신순이므로 여기부터는 이미 받은 기간
                 break
-            if m.get("media_product_type") == "REELS":
+            if m.get("media_product_type") == "REELS" and d >= START:
                 out.append({"id": m["id"], "date": d, "permalink": m["permalink"],
                             "caption": m.get("caption", ""), "thumbnail_url": m.get("thumbnail_url")})
         url = None if stop else page.get("paging", {}).get("next")
@@ -299,6 +301,10 @@ def main():
         # 하루 겹쳐서 받아 시간대 경계 누락을 막는다
         since = START if args.full else max(START, (date.fromisoformat(last) - timedelta(days=1)).isoformat())
         new = fetch_graph(since) if args.source == "graph" else fetch_windsor(since)
+        # 받는 곳이 바뀌어 id가 달라도 같은 릴스(같은 주소)는 기존 id로 묶는다
+        by_link = {r["permalink"].rstrip("/"): k for k, r in raw.items()}
+        for n in new:
+            n["id"] = by_link.get(n["permalink"].rstrip("/"), n["id"])
         added = sum(1 for n in new if n["id"] not in raw)
         for n in new:
             raw[n["id"]] = {**raw.get(n["id"], {}), **n}

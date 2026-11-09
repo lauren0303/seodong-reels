@@ -209,6 +209,9 @@ def classify(item, kw):
             types = match(text, kw["types"], ign)
         if not regions:
             regions = match(text, kw["regions"], ign)
+        # '모음·모음집'도 '코스'와 같은 결로 본다. 용품 모음에 붙지 않게 장소 글일 때만
+        if "코스" not in types and any(flat(w) in flat(strong + " " + text) for w in kw.get("course_words", [])):
+            types = types + ["코스"]
     goods = (goods_title or goods_body) if category in ("용품", "공구", "정보") else []
     if category != "장소":
         regions, types = [], []

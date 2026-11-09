@@ -1,0 +1,43 @@
+name: 사이트 배포
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_run:            # 매일 릴스 업데이트가 끝나면 배포
+    workflows: ["릴스 업데이트"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 사이트 파일 모으기 (썸네일 축소)
+        run: |
+          pip install --quiet pillow
+          python scripts/build_site.py _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 1800000   # 30분까지 기다림 (기본 10분)

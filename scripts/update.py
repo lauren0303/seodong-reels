@@ -89,6 +89,11 @@ def norm(s):
     return re.sub(r"\s+", "", s)
 
 
+def flat(s):
+    # 띄어쓰기는 살려서 비교한다 (붙이면 "자세가 평소"가 "가평"으로 잡힘)
+    return re.sub(r"\s+", " ", s).lower()
+
+
 def clean_caption(caption, kw):
     # "…가 궁금하다면 / @seodong_love 팔로우" 같은 매번 붙는 문구는 분류에서 뺀다
     lines = caption.splitlines()
@@ -115,39 +120,87 @@ def ad_label(caption, kw):
     return None
 
 
-def match(text, table):
-    t = norm(text)
-    return [name for name, words in table.items() if any(norm(w) in t for w in words)]
+def blank(text, words):
+    for w in sorted(words, key=len, reverse=True):
+        text = text.replace(flat(w), " ")
+    return text
+
+
+def match(text, table, ignore=()):
+    """사전 단어를 긴 것부터 찾고, 찾은 자리는 지워서 '남양주' 안의 '양주'처럼 겹쳐 잡히지 않게 한다."""
+    text = blank(flat(text), ignore)
+    pairs = sorted(((flat(w), name) for name, words in table.items() for w in words),
+                   key=lambda p: len(p[0]), reverse=True)
+    found = []
+    for w, name in pairs:
+        if w in text:
+            text = text.replace(w, " ")
+            if name not in found:
+                found.append(name)
+    order = list(table)
+    return sorted(found, key=order.index)
+
+
+def pin_lines(caption, kw):
+    return [l for l in caption.splitlines()
+            if "📍" in l and not any(w in l for w in kw.get("pin_ignore", []))
+            and len(l.replace("📍", "").strip()) > 1]
 
 
 def classify(item, kw):
     text = clean_caption(item["caption"], kw)
-    regions = match(text, kw["regions"])
-    types = match(text, kw["types"])
-    goods = match(text, kw["goods"])
+    title = title_of(item["caption"])
+    pins = pin_lines(item["caption"], kw)
+    strong = "\n".join([title, *pins])  # 제목과 📍 줄이 그 릴스의 주제
+    ign = kw.get("ignore_words", [])
+
+    types = match(strong, kw["types"], ign)
+    regions = match(strong, kw["regions"], ign)
+    goods_title = match(title, kw["goods"], ign)
+    goods_body = match(text, kw["goods"], ign)
+
     gb = kw["groupbuy"]
-    t = norm(text)
-    title = norm(title_of(item["caption"]))
+    t, nt = flat(text), norm(title)
     mentions = any(w in t for w in gb["strong"])
     # 공구 글: 제목에 공구가 있거나, 공구가·일정 같은 공구 안내가 있거나,
     # 공구 언급만 있고 장소 내용은 없을 때. (여행 릴스 끝의 "공구 예정" 홍보는 장소로 둔다)
-    # 오픈/마감은 "오픈런", "신청 마감"처럼 공구와 무관하게 자주 쓰여 단독으로는 보지 않는다.
-    is_gb = (any(w in title for w in gb["strong"])
-             or any(norm(w) in t for w in gb["details"])
-             or (mentions and not types))
+    is_gb = (any(w in nt for w in gb["strong"])
+             or any(flat(w) in t for w in gb["details"])
+             or (mentions and not types and not pins))
     if is_gb:
         category = "공구"
-    elif types:
+    elif types or pins:
         category = "장소"
-    elif goods:
+    elif goods_title:
         category = "용품"
     else:
-        category = "일상"
-    tags = {"region": regions if category == "장소" else [],
-            "type": types if category == "장소" else [],
-            "goods": goods if category in ("용품", "공구") else [],
-            "category": category}
-    ad = ad_label(item["caption"], kw)
+        body_types = match(text, kw["types"], ign)
+        if body_types and not goods_body:
+            category, types = "장소", body_types
+        elif goods_body:
+            category = "용품"
+        else:
+            category = "일상"
+    info = [w for w in kw.get("info_words", []) if w in flat(strong + " " + text)]
+    if info and category in ("용품", "일상"):
+        category = "정보"  # 레시피 같은 정보성 릴스
+    if category == "장소":
+        if not types:
+            types = match(text, kw["types"], ign)
+        if not regions:
+            regions = match(text, kw["regions"], ign)
+    goods = (goods_title or goods_body) if category in ("용품", "공구", "정보") else []
+    if category != "장소":
+        regions, types = [], []
+    # 검색 키워드: 지역 + 캡션에 나온 동네 이름(잠실·묵호 등) + 종류 + 구분
+    zone = blank(flat(strong if regions else text), ign)
+    areas = [w for name in regions for w in kw["regions"].get(name, [])
+             if w != name and flat(w) in zone]
+    keywords = list(dict.fromkeys(regions + areas + types + goods + [category] + info
+                                  + (["용품"] if category == "공구" else [])))
+    tags = {"region": regions, "type": types, "goods": goods,
+            "category": category, "keywords": keywords}
+    ad = ad_label(item["caption"], kw)  # 카드 배지용 (검색 키워드에는 넣지 않음)
     if ad:
         tags["ad"] = ad
     return tags
@@ -184,6 +237,16 @@ def drop_pilots(reels, days=3):
             if (date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days <= days and not a.get("keep"):
                 drop.add(a["id"])  # 3일 안에 같은 글이 또 올라왔으면 앞의 것은 파일럿
     return [r for r in reels if r["id"] not in drop], len(drop)
+
+
+def add_nationwide(tags, n=3):
+    """지역이 3곳 이상인 모음 릴스는 '전국'으로도 찾히게 한다."""
+    regions = [r for r in tags.get("region", []) if r != "전국"]
+    if len(regions) >= n and "전국" not in tags.get("region", []):
+        tags["region"] = ["전국"] + tags["region"]
+        kws = tags.get("keywords")
+        if kws is not None and "전국" not in kws:
+            tags["keywords"] = ["전국"] + kws
 
 
 def apply_override(reel, ov):
@@ -249,6 +312,7 @@ def main():
                 "title": title_of(item["caption"]), "caption": item["caption"],
                 "thumb": save_thumb(item), "tags": classify(item, kw)}
         reel = apply_override(reel, overrides.get(item["id"]))
+        add_nationwide(reel["tags"])
         if not reel.pop("hide", False):
             reels.append(reel)
     reels, pilots = drop_pilots(reels)
@@ -274,12 +338,12 @@ def main():
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8-sig") as f:  # 엑셀에서 한글 깨짐 방지
             w = csv.writer(f)
-            w.writerow(["날짜", "캡션 첫 줄", "구분", "지역", "유형", "용품", "광고표시", "링크", "id"])
+            w.writerow(["날짜", "캡션 첫 줄", "구분", "지역", "장소 유형", "제품 종류", "검색 키워드", "광고표시", "링크", "id"])
             for r in reels:
                 t = r["tags"]
                 w.writerow([r["date"], r["title"], t["category"], ", ".join(t.get("region", [])),
                             ", ".join(t.get("type", [])), ", ".join(t.get("goods", [])),
-                            t.get("ad", ""), r["permalink"], r["id"]])
+                            ", ".join(t.get("keywords", [])), t.get("ad", ""), r["permalink"], r["id"]])
         print(f"분류표: {args.csv}")
 
 

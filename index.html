@@ -143,11 +143,11 @@ a.link:hover small{color:var(--accent-ink)}
     </div>
     <div class="searchbox">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="가평, 독채, 유모차처럼 검색해 보세요" aria-label="릴스 검색" autocomplete="off" enterkeyhint="search">
+      <input id="q" type="search" placeholder="가평, 맛집, 개모차처럼 검색해 보세요" aria-label="릴스 검색" autocomplete="off" enterkeyhint="search">
       <button class="clear" id="clear" type="button" aria-label="검색어 지우기" hidden>×</button>
     </div>
     <div class="facet"><span id="lbl-region">지역</span><div class="chipset" id="regions" role="group" aria-labelledby="lbl-region"></div></div>
-    <div class="facet"><span id="lbl-type">유형</span><div class="chipset" id="types" role="group" aria-labelledby="lbl-type"></div></div>
+    <div class="facet"><span id="lbl-type">종류</span><div class="chipset" id="types" role="group" aria-labelledby="lbl-type"></div></div>
     <div class="meta" aria-live="polite"><span id="summary">불러오는 중…</span><button class="reset" id="reset" type="button" hidden>조건 초기화</button></div>
     <ul class="cards" id="cards"></ul>
     <button class="loadmore" id="loadmore" type="button" hidden>더 보기</button>
@@ -159,27 +159,37 @@ a.link:hover small{color:var(--accent-ink)}
 
       <div class="group">
         <h3>애견동반 장소</h3>
-        <details data-type="여행지">
-          <summary><span class="tag">여행지</span><span class="name">애견동반 여행지</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
-          <div class="body"><p>가기 전에 꼭 확인할 조건을 같은 기준으로 정리합니다.</p>
-            <ul class="chips"><li>주차</li><li>동반 가능 구역</li><li>이동장 필요 여부</li><li>무게 제한</li><li>추가 비용</li></ul>
-            <p class="slot">목록 준비 중</p></div>
+        <details data-type="맛집">
+          <summary><span class="tag">맛집</span><span class="name">애견동반 맛집·카페</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>실내 동반 범위</li><li>이동장 필요 여부</li><li>무게 제한</li><li>주차</li></ul><p class="slot">목록 준비 중</p></div>
         </details>
-        <details data-type="카페">
-          <summary><span class="tag">카페</span><span class="name">애견동반 카페</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
-          <div class="body"><ul class="chips"><li>실내 동반 범위</li><li>바닥 미끄러움</li><li>좌석 간격</li><li>주차</li></ul><p class="slot">목록 준비 중</p></div>
+        <details data-type="애견카페">
+          <summary><span class="tag">애카</span><span class="name">애견카페</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>운동장·오프리쉬</li><li>무게 제한</li><li>입장료</li><li>주차</li></ul><p class="slot">목록 준비 중</p></div>
         </details>
         <details data-type="숙소">
           <summary><span class="tag">숙소</span><span class="name">애견동반 숙소</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
-          <div class="body"><ul class="chips"><li>무게·마릿수 제한</li><li>반려견 추가 요금</li><li>침구 이용 규정</li><li>주변 산책 동선</li></ul><p class="slot">목록 준비 중</p></div>
+          <div class="body"><ul class="chips"><li>무게·마릿수 제한</li><li>반려견 추가 요금</li><li>운동장·마당</li><li>주변 산책 동선</li></ul><p class="slot">목록 준비 중</p></div>
         </details>
-        <details data-type="식당">
-          <summary><span class="tag">식당</span><span class="name">애견동반 식당</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
-          <div class="body"><ul class="chips"><li>실내·테라스 구분</li><li>이동장 필요 여부</li><li>주차</li></ul><p class="slot">목록 준비 중</p></div>
+        <details data-type="바다">
+          <summary><span class="tag">바다</span><span class="name">바다</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>동반 가능 구역</li><li>목줄 규정</li><li>주차</li></ul><p class="slot">목록 준비 중</p></div>
         </details>
-        <details data-type="산책길/공원">
-          <summary><span class="tag">산책</span><span class="name">산책길</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+        <details data-type="관광지(산책)">
+          <summary><span class="tag">관광지</span><span class="name">관광지·산책길</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
           <div class="body"><ul class="chips"><li>노면 상태</li><li>그늘</li><li>소요 시간</li><li>주차</li></ul><p class="slot">목록 준비 중</p></div>
+        </details>
+        <details data-type="체험">
+          <summary><span class="tag">체험</span><span class="name">체험·놀거리</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>예약 필요 여부</li><li>무게 제한</li><li>이용 요금</li></ul><p class="slot">목록 준비 중</p></div>
+        </details>
+        <details data-type="동물병원">
+          <summary><span class="tag">병원</span><span class="name">동물병원</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>진료 과목</li><li>비용</li><li>다닌 기간</li></ul><p class="slot">목록 준비 중</p></div>
+        </details>
+        <details data-type="코스">
+          <summary><span class="tag">코스</span><span class="name">여행 코스</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>당일치기</li><li>1박 2일</li><li>이동 동선</li></ul><p class="slot">목록 준비 중</p></div>
         </details>
       </div>
 
@@ -189,6 +199,14 @@ a.link:hover small{color:var(--accent-ink)}
           <summary><span class="tag">용품</span><span class="name">직접 써 본 용품 후기</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
           <div class="body"><p>장점과 아쉬운 점을 같이 적습니다.</p>
             <ul class="chips"><li>사용 기간</li><li>맞는 체중</li><li>보관성</li><li>아쉬운 점</li></ul><p class="slot">목록 준비 중</p></div>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>정보</h3>
+        <details data-cat="정보">
+          <summary><span class="tag">정보</span><span class="name">레시피·반려 정보</span><span class="count"></span><span class="chev" aria-hidden="true">→</span></summary>
+          <div class="body"><ul class="chips"><li>수제간식 레시피</li><li>건강 관리</li><li>알아두면 좋은 혜택</li></ul><p class="slot">목록 준비 중</p></div>
         </details>
       </div>
 
@@ -222,8 +240,11 @@ a.link:hover small{color:var(--accent-ink)}
 <script>
 const DM = "https://ig.me/m/seodong_love";
 const PAGE = 24;
-const CATS = ["전체", "장소", "용품", "공구"];
-const TYPE_ORDER = ["숙소","독채","풀빌라","캠핑/글램핑","카페","식당","산책길/공원","해변","체험·놀거리","여행지"];
+const CATS = ["전체", "장소", "용품", "공구", "정보"];
+// 공구도 용품이므로 용품 탭에 함께 보인다
+const inCat = (r, c) => c === "전체" || r.tags.category === c || (c === "용품" && r.tags.category === "공구");
+const TYPE_ORDER = ["맛집","애견카페","숙소","바다","관광지(산책)","체험","운동장","동물병원","애견용품점","코스","개모차","이동가방","백팩","캐리어","산책가방","카시트","하네스","목줄","매트","방석","간식","간식통","사료","영양제","건강","진드기","미용","목욕","양치","장난감","노즈워크","옷","리빙","가전","밥그릇","식기","사진","카메라","장비","굿즈"];
+const kinds = r => [...(r.tags.type || []), ...(r.tags.goods || [])];  // 장소 유형 + 제품 종류
 const REGION_LIMIT = 12;
 
 const $ = s => document.querySelector(s);
@@ -256,9 +277,9 @@ function writeURL() {
 // 동의어 사전: keywords.json의 분류 단어 + search_synonyms → 대표 태그
 function buildAlias(kw) {
   const map = {};
+  // 사전의 대표 이름과 search_synonyms만 쓴다 (잠실→서울처럼 넓히면 '잠실' 검색에 서울 전체가 나옴)
   for (const group of ["regions", "types", "goods"])
-    for (const [name, words] of Object.entries(kw[group] || {}))
-      for (const w of [name, ...words]) (map[norm(w)] ||= new Set()).add(name);
+    for (const name of Object.keys(kw[group] || {})) (map[norm(name)] ||= new Set()).add(name);
   for (const [w, name] of Object.entries(kw.search_synonyms || {}))
     (map[norm(w)] ||= new Set()).add(name);
   return map;
@@ -266,7 +287,8 @@ function buildAlias(kw) {
 
 function tagList(r) {
   const t = r.tags;
-  return [...(t.region || []), ...(t.type || []), ...(t.goods || []), t.category, t.ad].filter(Boolean);
+  // 검색 키워드(광고 표시는 넣지 않음)
+  return t.keywords || [...(t.region || []), ...(t.type || []), ...(t.goods || []), t.category].filter(Boolean);
 }
 
 function matchesQuery(r, terms) {
@@ -280,9 +302,9 @@ function matchesQuery(r, terms) {
 function filtered({ ignore } = {}) {
   const terms = state.q.split(/\s+/).map(norm).filter(Boolean);
   return reels.filter(r =>
-    (ignore === "cat" || state.cat === "전체" || r.tags.category === state.cat) &&
+    (ignore === "cat" || inCat(r, state.cat)) &&
     (ignore === "region" || !state.region || (r.tags.region || []).includes(state.region)) &&
-    (ignore === "type" || !state.type || (r.tags.type || []).includes(state.type)) &&
+    (ignore === "type" || !state.type || kinds(r).includes(state.type)) &&
     matchesQuery(r, terms));
 }
 
@@ -299,7 +321,7 @@ function chip(value, n, pressed, kind) {
 function renderFacets() {
   const catBase = filtered({ ignore: "cat" });
   $("#cats").innerHTML = CATS.map(c => {
-    const n = c === "전체" ? catBase.length : catBase.filter(r => r.tags.category === c).length;
+    const n = catBase.filter(r => inCat(r, c)).length;
     return `<button type="button" data-cat="${c}" aria-pressed="${state.cat === c}">${c}<small>${n}</small></button>`;
   }).join("");
 
@@ -311,9 +333,11 @@ function renderFacets() {
     (rc.length > REGION_LIMIT ? `<button type="button" class="more-chips" id="moreRegions">${state.allRegions ? "접기" : `지역 ${rc.length - REGION_LIMIT}곳 더`}</button>` : "")) ||
     `<span class="status">해당 없음</span>`;
 
-  const tc = count(filtered({ ignore: "type" }), "type");
+  const tc = new Map();
+  for (const r of filtered({ ignore: "type" })) for (const v of kinds(r)) tc.set(v, (tc.get(v) || 0) + 1);
   if (state.type && !tc.has(state.type)) tc.set(state.type, 0);
-  const types = [...tc].sort((a, b) => TYPE_ORDER.indexOf(a[0]) - TYPE_ORDER.indexOf(b[0]));
+  const rank = v => (i => i < 0 ? 999 : i)(TYPE_ORDER.indexOf(v));
+  const types = [...tc].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1]);
   $("#types").innerHTML = types.map(([v, n]) => chip(v, n, v === state.type, "type")).join("") || `<span class="status">해당 없음</span>`;
 }
 
@@ -384,7 +408,7 @@ function wireMenu() {
   document.querySelectorAll(".menu details").forEach(d => {
     const { type, cat } = d.dataset;
     if (!type && !cat) return;
-    const n = reels.filter(r => type ? (r.tags.type || []).includes(type) : r.tags.category === cat).length;
+    const n = reels.filter(r => type ? (r.tags.type || []).includes(type) : inCat(r, cat)).length;
     d.querySelector(".count").textContent = n ? `${n}개` : "";
     const slot = d.querySelector(".slot");
     if (!n) return;

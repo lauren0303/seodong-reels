@@ -278,7 +278,7 @@ const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
 const flat = s => (s || "").toLowerCase().replace(/\s+/g, " ");
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-let reels = [], alias = {};
+let reels = [], alias = {}, regionNames = new Set();
 const state = { q: "", cat: "전체", form: "", region: "", type: "", shown: PAGE, allRegions: false };
 const FORMS = [["", "전체"], ["reel", "릴스"], ["carousel", "캐러셀"]];
 const formOf = r => r.kind === "carousel" ? "carousel" : "reel";
@@ -324,7 +324,8 @@ function matchesQuery(r, terms) {
   return terms.every(term => {
     if (r._hay.includes(term)) return true;
     const canon = alias[term];
-    return canon && [...canon].some(c => r._tags.has(c) || r._hay.includes(norm(c)));
+    // 지역 동의어(묵호→동해)는 태그로만 찾는다. 본문의 '동해대로' 같은 주소에 걸리지 않게
+    return canon && [...canon].some(c => r._tags.has(c) || (!regionNames.has(c) && r._hay.includes(norm(c))));
   });
 }
 
@@ -491,6 +492,7 @@ function showGroupbuy(g) {
       fetch("data/keywords.json", { cache: "no-cache" }).then(r => r.json()).catch(() => ({})),
     ]);
     alias = buildAlias(kw);
+    regionNames = new Set(Object.keys(kw.regions || {}));
     reels = rs.sort((a, b) => b.date.localeCompare(a.date)).map(r => ({
       ...r, _tags: new Set(tagList(r)), _hay: flat([r.title, r.caption, ...tagList(r)].join("\n")),
     }));

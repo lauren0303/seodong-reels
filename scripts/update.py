@@ -3,6 +3,7 @@
 
   python scripts/update.py --source graph     # Instagram Graph API (IG_ACCESS_TOKEN)
   python scripts/update.py --source windsor   # Windsor.ai REST (WINDSOR_API_KEY)
+  python scripts/update.py --refresh-thumbs   # 최근 3개월 다시 조회 + 바뀐 썸네일 반영 (주 1회)
   python scripts/update.py --source none      # 수집 없이 재분류만 (keywords/overrides 수정 후)
   python scripts/update.py --source none --csv review.csv   # 검수용 분류표
 
@@ -11,13 +12,14 @@
 reels.json이 바뀌었으면 GITHUB_OUTPUT에 changed=true를 남긴다.
 """
 import argparse, csv, json, os, re, sys, urllib.parse, urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 IMAGES = ROOT / "images"
 START = "2024-10-01"
+REFRESH_DAYS = 90  # --refresh-thumbs 때 썸네일을 다시 확인할 기간(최근 3개월)
 IG_USER_ID = os.environ.get("IG_USER_ID", "17841453924057893")
 GRAPH = "https://graph.facebook.com/v21.0"      # 페이스북 로그인 토큰(EAA…)
 IG_GRAPH = "https://graph.instagram.com/v21.0"  # 인스타 로그인 토큰(IG…) — 페이스북 페이지 없이 무료
@@ -266,87 +268,72 @@ def apply_override(reel, ov):
 
 
 # ---------- 썸네일 ----------
-def save_thumb(item):
+def thumb_key(url):
+    """CDN 주소의 파일 이름. 서명(?뒤)은 매번 바뀌지만 파일 이름은 커버를 바꿀 때만 바뀐다."""
+    return Path(urllib.parse.urlparse(url).path).name if url else None
+
+
+def same_picture(a, b):
+    """두 이미지가 눈으로 보기에 같은지. Pillow가 없으면 바이트가 같은지만 본다."""
+    if a == b:
+        return True
+    try:
+        from io import BytesIO
+        from PIL import Image
+    except ImportError:
+        return False
+    def sig(data):
+        im = Image.open(BytesIO(data)).convert("L").resize((16, 20))
+        px = list(im.getdata())
+        avg = sum(px) / len(px)
+        return [p > avg for p in px], px
+    try:
+        (ha, pa), (hb, pb) = sig(a), sig(b)
+    except Exception:
+        return False
+    # 같은 커버를 다른 화질로 받은 경우는 밝기 패턴이 거의 그대로다
+    diff_bits = sum(x != y for x, y in zip(ha, hb))
+    diff_px = sum(abs(x - y) for x, y in zip(pa, pb)) / len(pa)
+    return diff_bits <= 12 and diff_px <= 12
+
+
+def save_thumb(item, refresh=False):
+    """썸네일을 images/에 저장한다.
+    refresh=True면 이미 있는 썸네일도 인스타의 현재 커버와 비교해, 바뀌었을 때만 덮어쓴다."""
     path = IMAGES / f"{item['id']}.jpg"
-    if path.exists():
-        return f"images/{path.name}"
+    rel = f"images/{path.name}"
     url = item.get("thumbnail_url")
+    key = thumb_key(url)
+    if path.exists():
+        if not (refresh and url):
+            return rel
+        if key and key == item.get("thumb_key"):
+            return rel  # 지난번과 같은 파일 — 다시 받을 필요 없음
     if not url:
         return None
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=60) as r:
             data = r.read()
-        IMAGES.mkdir(exist_ok=True)
-        path.write_bytes(data)
-        return f"images/{path.name}"
-    except Exception as e:  # 만료된 URL 등: 카드에서 대체 이미지 사용
+    except Exception as e:  # 만료된 URL 등: 있던 썸네일은 그대로, 없으면 카드에서 대체 이미지
         print(f"썸네일 실패 {item['id']}: {e}", file=sys.stderr)
-        return None
-
-
-# ---------- 공구 상태 ----------
-PERIOD = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s*\([^)]*\))?\s*[~\-–]\s*"
-                    r"(?:(\d{1,2})\s*월\s*)?(\d{1,2})\s*일")
-CLOSED = re.compile(r"조기\s*마감|마감되었|품절")
-
-
-def parse_period(caption, posted):
-    """'10월 13일(화) ~ 16일(금)' → (date(…13), date(…16)). 없으면 None."""
-    m = PERIOD.search(caption)
-    if not m:
-        return None
-    m1, d1, m2, d2 = int(m[1]), int(m[2]), int(m[3] or m[1]), int(m[4])
-    y = posted.year + (1 if m1 < posted.month - 6 else 0)  # 12월에 올린 1월 공구
-    try:
-        start = date(y, m1, d1)
-        end = date(y + (1 if m2 < m1 else 0), m2, d2)
-    except ValueError:
-        return None
-    return start, end
-
-
-def groupbuy_status(reels, today):
-    """캡션의 공구 기간으로 '지금' 칸 상태를 정한다: active / upcoming / recent / none."""
-    gb = [r for r in reels if r["tags"].get("category") == "공구" and r["date"] <= today.isoformat()]
-    periods = {}
-    for r in gb:
-        posted = date.fromisoformat(r["date"])
-        if (today - posted).days > 90:
-            continue
-        pr = parse_period(r["caption"], posted)
-        if not pr:
-            continue
-        g = periods.setdefault(pr, {"reels": [], "closed": False})
-        g["reels"].append(r)
-        if CLOSED.search(r["caption"]):
-            g["closed"] = True
-    best = None
-    for (start, end), g in periods.items():
-        if g["closed"] or end < today:
-            continue
-        status = "active" if start <= today else "upcoming"
-        cand = (0 if status == "active" else 1, start, status, end, g["reels"])
-        if best is None or cand[:2] < best[:2]:
-            best = cand
-    if best:
-        _, start, status, end, rs = best
-        r = max(rs, key=lambda x: x["date"])  # 가장 최근에 올린 안내 릴스
-        return {"status": status, "start": start.isoformat(), "end": end.isoformat(),
-                "title": r["title"], "permalink": r["permalink"]}
-    recent = [r for r in gb if (today - date.fromisoformat(r["date"])).days <= 14
-              and not parse_period(r["caption"], date.fromisoformat(r["date"]))
-              and not CLOSED.search(r["caption"])]
-    if recent:
-        r = max(recent, key=lambda x: x["date"])
-        return {"status": "recent", "title": r["title"], "permalink": r["permalink"], "date": r["date"]}
-    return {"status": "none"}
+        return rel if path.exists() else None
+    item["thumb_key"] = key
+    if path.exists() and same_picture(path.read_bytes(), data):
+        return rel
+    if path.exists():
+        print(f"썸네일 바뀜 {item['id']} {item.get('permalink', '')}")
+    IMAGES.mkdir(exist_ok=True)
+    path.write_bytes(data)
+    return rel
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["graph", "windsor", "none"], default="graph")
     ap.add_argument("--full", action="store_true", help="2024-10-01부터 전부 다시 받기")
+    ap.add_argument("--refresh-thumbs", action="store_true",
+                    help="최근 3개월 릴스를 다시 조회해 인스타에서 바꾼 썸네일(커버)을 반영")
     ap.add_argument("--csv", help="검수용 분류표 CSV 경로")
     args = ap.parse_args()
 
@@ -358,6 +345,8 @@ def main():
         last = max((r["date"] for r in raw.values()), default=START)
         # 하루 겹쳐서 받아 시간대 경계 누락을 막는다
         since = START if args.full else max(START, (date.fromisoformat(last) - timedelta(days=1)).isoformat())
+        if args.refresh_thumbs and not args.full:  # 썸네일 확인은 최근 3개월 릴스만
+            since = min(since, max(START, (date.today() - timedelta(days=REFRESH_DAYS)).isoformat()))
         new = fetch_graph(since) if args.source == "graph" else fetch_windsor(since)
         # 받는 곳이 바뀌어 id가 달라도 같은 릴스(같은 주소)는 기존 id로 묶는다
         by_link = {r["permalink"].rstrip("/"): k for k, r in raw.items()}
@@ -374,7 +363,7 @@ def main():
             continue
         reel = {"id": item["id"], "permalink": item["permalink"], "date": item["date"],
                 "title": title_of(item["caption"]), "caption": item["caption"],
-                "thumb": save_thumb(item), "tags": classify(item, kw)}
+                "thumb": save_thumb(item, refresh=args.refresh_thumbs), "tags": classify(item, kw)}
         reel = apply_override(reel, overrides.get(item["id"]))
         add_nationwide(reel["tags"])
         if not reel.pop("hide", False):
@@ -395,10 +384,6 @@ def main():
     if changed:
         out.write_text(new_text, "utf-8")
     print(f"reels.json: {len(reels)}개, {'변경됨' if changed else '변경 없음'}")
-    today_kst = (datetime.now(timezone.utc) + timedelta(hours=9)).date()
-    gb = groupbuy_status(reels, today_kst)
-    (DATA / "groupbuy.json").write_text(json.dumps(gb, ensure_ascii=False, indent=1) + "\n", "utf-8")
-    print(f"공구 상태: {gb['status']}")
     if gh := os.environ.get("GITHUB_OUTPUT"):
         with open(gh, "a") as f:
             f.write(f"changed={'true' if changed else 'false'}\n")

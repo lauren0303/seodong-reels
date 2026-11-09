@@ -120,6 +120,10 @@ a.link:hover{background:var(--accent);color:var(--accent-ink)}
 a.link:hover small{color:var(--accent-ink)}
 .link.todo{opacity:.72}
 .foot{font-size:13px;color:var(--muted);margin:0}
+.legal{border-top:1px solid var(--line);padding-top:20px;font-size:12.5px;line-height:1.7;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.legal p{margin:0}
+.legal strong{color:var(--ink);font-weight:600}
+.legal a{color:inherit}
 @media (max-width:560px){
   .finder,.menu,.links{padding:20px}
   .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -138,7 +142,7 @@ a.link:hover small{color:var(--accent-ink)}
   <header>
     <p class="eyebrow">by 서동언니</p>
     <h1>서동<span>로그</span></h1>
-    <p class="lede">강아지가 눈치 보지 않고, 보호자는 낭비하지 않는 선택. 서동이와 직접 가 보고 써 본 것만 모았어요.</p>
+    <p class="lede">강아지가 눈치 보지 않고, 보호자는 낭비하지 않는 선택.<br>서동이와 직접 가 보고 써 본 것만 모았어요.</p>
   </header>
 
   <section class="finder" id="finder" aria-labelledby="finder-title">
@@ -241,6 +245,12 @@ a.link:hover small{color:var(--accent-ink)}
     </aside>
   </div>
   <p class="foot" id="foot">릴스는 매일 오전 7시에 새로 반영됩니다.</p>
+  <footer class="legal">
+    <p><strong>© 2026 서동언니 (@seodong_love). All rights reserved.</strong></p>
+    <p>이 사이트의 사진·영상·글의 저작권은 서동언니에게 있어요. 허락 없이 복제·캡처해 다시 올리거나, 편집·상업적으로 이용하는 것을 금지합니다.</p>
+    <p>장소 정보는 방문 당시 기준이라 바뀔 수 있어요. 방문 전 운영 시간·동반 조건을 꼭 확인해 주세요. 광고·협찬 콘텐츠는 카드에 따로 표시했어요.</p>
+    <p>콘텐츠 이용·협업 문의 <a href="mailto:lauren0303@naver.com">lauren0303@naver.com</a></p>
+  </footer>
 </div>
 
 <script>

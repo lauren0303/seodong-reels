@@ -159,6 +159,7 @@ a.link:hover small{color:var(--accent-ink)}
       <input id="q" type="search" placeholder="가평, 맛집, 개모차처럼 검색해 보세요" aria-label="릴스 검색" autocomplete="off" enterkeyhint="search">
       <button class="clear" id="clear" type="button" aria-label="검색어 지우기" hidden>×</button>
     </div>
+    <div class="facet"><span id="lbl-form">형식</span><div class="chipset" id="forms" role="group" aria-labelledby="lbl-form"></div></div>
     <div class="facet"><span id="lbl-region">지역</span><div class="chipset" id="regions" role="group" aria-labelledby="lbl-region"></div></div>
     <div class="facet"><span id="lbl-type">종류</span><div class="chipset" id="types" role="group" aria-labelledby="lbl-type"></div></div>
     <div class="meta" aria-live="polite"><span id="summary">불러오는 중…</span><button class="reset" id="reset" type="button" hidden>조건 초기화</button></div>
@@ -279,8 +280,10 @@ const norm = s => (s || "").toLowerCase().replace(/\s+/g, "");
 const flat = s => (s || "").toLowerCase().replace(/\s+/g, " ");
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-let reels = [], alias = {};
-const state = { q: "", cat: "전체", region: "", type: "", shown: PAGE, allRegions: false };
+let reels = [], alias = {}, regionNames = new Set();
+const state = { q: "", cat: "전체", form: "", region: "", type: "", shown: PAGE, allRegions: false };
+const FORMS = [["", "전체"], ["reel", "릴스"], ["carousel", "캐러셀"]];
+const formOf = r => r.kind === "carousel" ? "carousel" : "reel";
 
 // URL(?q=가평&region=…)로 검색 상태 공유
 function readURL() {
@@ -289,11 +292,13 @@ function readURL() {
   state.cat = CATS.includes(p.get("cat")) ? p.get("cat") : "전체";
   state.region = p.get("region") || "";
   state.type = p.get("type") || "";
+  state.form = ["reel", "carousel"].includes(p.get("form")) ? p.get("form") : "";
 }
 function writeURL() {
   const p = new URLSearchParams();
   if (state.q) p.set("q", state.q);
   if (state.cat !== "전체") p.set("cat", state.cat);
+  if (state.form) p.set("form", state.form);
   if (state.region) p.set("region", state.region);
   if (state.type) p.set("type", state.type);
   const qs = p.toString();
@@ -321,7 +326,8 @@ function matchesQuery(r, terms) {
   return terms.every(term => {
     if (r._hay.includes(term)) return true;
     const canon = alias[term];
-    return canon && [...canon].some(c => r._tags.has(c) || r._hay.includes(norm(c)));
+    // 지역 동의어(묵호→동해)는 태그로만 찾는다. 본문의 '동해대로' 같은 주소에 걸리지 않게
+    return canon && [...canon].some(c => r._tags.has(c) || (!regionNames.has(c) && r._hay.includes(norm(c))));
   });
 }
 
@@ -329,6 +335,7 @@ function filtered({ ignore } = {}) {
   const terms = state.q.split(/\s+/).map(norm).filter(Boolean);
   return reels.filter(r =>
     (ignore === "cat" || inCat(r, state.cat)) &&
+    (ignore === "form" || !state.form || formOf(r) === state.form) &&
     (ignore === "region" || !state.region || (r.tags.region || []).includes(state.region)) &&
     (ignore === "type" || !state.type || kinds(r).includes(state.type)) &&
     matchesQuery(r, terms));
@@ -340,8 +347,8 @@ function count(list, key) {
   return c;
 }
 
-function chip(value, n, pressed, kind) {
-  return `<button type="button" class="chip" data-kind="${kind}" data-value="${esc(value)}" aria-pressed="${pressed}">${esc(value)}<small>${n}</small></button>`;
+function chip(value, n, pressed, kind, data = value) {
+  return `<button type="button" class="chip" data-kind="${kind}" data-value="${esc(data)}" aria-pressed="${pressed}">${esc(value)}<small>${n}</small></button>`;
 }
 
 function renderFacets() {
@@ -350,6 +357,10 @@ function renderFacets() {
     const n = catBase.filter(r => inCat(r, c)).length;
     return `<button type="button" data-cat="${c}" aria-pressed="${state.cat === c}">${c}<small>${n}</small></button>`;
   }).join("");
+
+  const formBase = filtered({ ignore: "form" });
+  $("#forms").innerHTML = FORMS.map(([v, label]) =>
+    chip(label, v ? formBase.filter(r => formOf(r) === v).length : formBase.length, state.form === v, "form", v)).join("");
 
   const rc = [...count(filtered({ ignore: "region" }), "region")].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
   if (state.region && !rc.some(([v]) => v === state.region)) rc.unshift([state.region, 0]);
@@ -395,10 +406,10 @@ function card(r) {
 function render() {
   renderFacets();
   const list = filtered();
-  const active = state.q || state.cat !== "전체" || state.region || state.type;
+  const active = state.q || state.cat !== "전체" || state.form || state.region || state.type;
   $("#clear").hidden = !state.q;
   $("#reset").hidden = !active;
-  const label = [state.region, state.type, state.cat !== "전체" && state.cat, state.q && `“${state.q}”`].filter(Boolean).join(" · ");
+  const label = [state.form && FORMS.find(([v]) => v === state.form)[1], state.region, state.type, state.cat !== "전체" && state.cat, state.q && `“${state.q}”`].filter(Boolean).join(" · ");
   $("#summary").innerHTML = list.length
     ? `${label ? esc(label) + " — " : ""}<strong>${list.length}개</strong> · 최신순`
     : `${esc(label)} 결과 없음`;
@@ -421,9 +432,10 @@ function update(patch) { Object.assign(state, patch, { shown: PAGE }); render();
 let timer;
 $("#q").addEventListener("input", e => { clearTimeout(timer); timer = setTimeout(() => update({ q: e.target.value.trim() }), 120); });
 $("#clear").addEventListener("click", () => { $("#q").value = ""; update({ q: "" }); $("#q").focus(); });
-$("#reset").addEventListener("click", () => { $("#q").value = ""; update({ q: "", cat: "전체", region: "", type: "" }); });
+$("#reset").addEventListener("click", () => { $("#q").value = ""; update({ q: "", cat: "전체", form: "", region: "", type: "" }); });
 $("#loadmore").addEventListener("click", () => { state.shown += PAGE; render(); });
 $("#cats").addEventListener("click", e => { const b = e.target.closest("button"); if (b) update({ cat: b.dataset.cat }); });
+$("#forms").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) update({ form: b.dataset.value }); });
 document.querySelectorAll("#regions, #types").forEach(el => el.addEventListener("click", e => {
   if (e.target.closest("#moreRegions")) { state.allRegions = !state.allRegions; return render(); }
   const b = e.target.closest(".chip"); if (!b) return;
@@ -443,7 +455,7 @@ function wireMenu() {
     const btn = Object.assign(document.createElement("button"), { type: "button", className: "jump", textContent: `${d.dataset.label || "릴스"} ${n}개 보기 ↓` });
     btn.addEventListener("click", () => {
       $("#q").value = "";
-      update(type ? { q: "", cat: "장소", region: "", type } : { q: "", cat, region: "", type: "" });
+      update(type ? { q: "", cat: "장소", form: "", region: "", type } : { q: "", cat, form: "", region: "", type: "" });
       $("#finder").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     });
     slot.replaceWith(btn);
@@ -482,6 +494,7 @@ function showGroupbuy(g) {
       fetch("data/keywords.json", { cache: "no-cache" }).then(r => r.json()).catch(() => ({})),
     ]);
     alias = buildAlias(kw);
+    regionNames = new Set(Object.keys(kw.regions || {}));
     reels = rs.sort((a, b) => b.date.localeCompare(a.date)).map(r => ({
       ...r, _tags: new Set(tagList(r)), _hay: flat([r.title, r.caption, ...tagList(r)].join("\n")),
     }));

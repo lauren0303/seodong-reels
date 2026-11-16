@@ -263,6 +263,25 @@ def drop_pilots(reels, days=3):
     return [r for r in reels if r["id"] not in drop], len(drop)
 
 
+def drop_deleted(raw, new, since, max_ratio=0.2):
+    """인스타에서 지운 게시물을 목록에서 뺀다.
+    이번에 다시 받은 기간(since 이후)에 있었는데 이번 응답에 없는 게시물 = 지운 것.
+    인스타가 잠깐 빈 목록이나 일부만 돌려주면 한꺼번에 사라지지 않게,
+    받은 게 0개이거나 그 기간의 20%를 넘게 빠지면 이번엔 빼지 않는다."""
+    window = [k for k, r in raw.items() if r["date"] >= since]
+    got = {n["id"] for n in new}
+    gone = [k for k in window if k not in got]
+    if not gone:
+        return 0
+    if not new or len(gone) > max(3, len(window) * max_ratio):
+        print(f"::warning::지운 것으로 보이는 게시물 {len(gone)}개(기간 내 {len(window)}개 중) — 너무 많아 이번엔 빼지 않습니다.")
+        return 0
+    for k in gone:
+        print(f"인스타에서 지운 게시물 제외: {raw[k]['date']} {raw[k]['permalink']}")
+        del raw[k]
+    return len(gone)
+
+
 def add_nationwide(tags, n=3):
     """지역이 3곳 이상인 모음 릴스는 '전국'으로도 찾히게 한다."""
     regions = [r for r in tags.get("region", []) if r != "전국"]
@@ -437,6 +456,7 @@ def main():
             raw[n["id"]] = {**raw.get(n["id"], {}), **n}
         n_car = sum(1 for n in new if n.get("kind") == "carousel")
         print(f"{since} 이후 게시물 {len(new)}개 조회(캐러셀 {n_car}개), 새 게시물 {added}개")
+        drop_deleted(raw, new, since)
 
     reels = []
     for item in sorted(raw.values(), key=lambda r: (r["date"], r["id"]), reverse=True):

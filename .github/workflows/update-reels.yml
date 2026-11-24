@@ -52,9 +52,15 @@ jobs:
           if [ "$(date -u +%u)" != "7" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
             echo "갱신은 일요일 UTC(=월요일 오전 7시 KST)에만 합니다."; exit 0
           fi
-          if [ -z "$FB_APP_ID" ] || [ -z "$GH_TOKEN" ]; then
-            echo "::warning::FB_APP_ID/FB_APP_SECRET/GH_PAT 가 없어 토큰 자동 갱신을 건너뜁니다."; exit 0
+          if [ -z "$IG_ACCESS_TOKEN" ] || [ -z "$GH_TOKEN" ]; then
+            echo "::warning::IG_ACCESS_TOKEN 또는 GH_PAT 가 없어 토큰 자동 갱신을 건너뜁니다. (토큰은 60일 뒤 만료)"; exit 0
           fi
+          # 인스타 로그인 토큰(IG…)은 앱 비밀번호 없이 갱신된다. 페이스북 토큰(EAA…)만 FB_APP_ID 필요
+          case "$IG_ACCESS_TOKEN" in IG*) ;; *)
+            if [ -z "$FB_APP_ID" ]; then
+              echo "::warning::페이스북 로그인 토큰은 FB_APP_ID/FB_APP_SECRET 가 있어야 갱신돼요. 건너뜁니다."; exit 0
+            fi;;
+          esac
           NEW=$(python scripts/refresh_token.py)
           echo "::add-mask::$NEW"
           echo "$NEW" | gh secret set IG_ACCESS_TOKEN --repo "${{ github.repository }}"

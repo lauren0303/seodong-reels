@@ -1,0 +1,22 @@
+name: 토큰 점검
+
+# Actions 탭에서 직접 눌러서만 실행한다. 읽기만 하고 아무것도 저장·커밋하지 않는다.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 인스타 토큰으로 계정·게시물·성과 데이터 읽어 보기
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python scripts/api_test.py

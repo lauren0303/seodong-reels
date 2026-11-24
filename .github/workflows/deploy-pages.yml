@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +37,18 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+      # 가끔 GitHub 쪽에서 방금 올린 파일 묶음을 못 찾는 일시 오류가 난다
+      # ("Fetching artifact metadata failed"). 한 번 실패하면 1분 쉬고 다시 배포한다.
       - id: deploy
+        continue-on-error: true
         uses: actions/deploy-pages@v4
         with:
-          timeout: 1800000   # 30분까지 기다림 (기본 10분)
+          timeout: 600000   # GitHub이 허용하는 최대 10분
+      - name: 1분 쉬었다가 다시 배포
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 60
+      - id: deploy2
+        if: steps.deploy.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
